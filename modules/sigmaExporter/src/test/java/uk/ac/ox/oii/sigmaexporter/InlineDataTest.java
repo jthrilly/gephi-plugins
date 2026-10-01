@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonParser;
+import java.io.IOException;
+import java.io.StringWriter;
 import org.junit.jupiter.api.Test;
 
 class InlineDataTest {
@@ -22,6 +24,18 @@ class InlineDataTest {
         assertEquals("{\"label\":\"<\\/script>\\u003c!--x\\u2028y\\u2029z\"}", escaped);
         // Still the same JSON value once parsed
         assertEquals(JsonParser.parseString(json), JsonParser.parseString(escaped));
+    }
+
+    @Test
+    void streamedDataIsEscapedAcrossWriteBoundaries() throws IOException {
+        StringWriter out = new StringWriter();
+        InlineData.inject(HTML, "{}", w -> {
+            w.write("{\"label\":\"<");
+            w.write("/script><");
+            w.write("!--\"}");
+        }, out);
+        assertTrue(out.toString().contains("{\"label\":\"<\\/script>\\u003c!--\"}"));
+        assertEquals(InlineData.inject(HTML, "{}", "{\"label\":\"</script><!--\"}"), out.toString());
     }
 
     @Test

@@ -142,8 +142,7 @@
                             <outputDirectory>
                                 ${project.build.directory}
                             </outputDirectory>
-                            <excludes>**/jre/**</excludes>
-                            <excludes>**/jre-x64/**</excludes>
+                            <excludes>**/jre/**,**/jre-x64/**</excludes>
                         </configuration>
                     </execution>
                 </executions>

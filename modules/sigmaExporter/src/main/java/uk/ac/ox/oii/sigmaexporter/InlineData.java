@@ -3,6 +3,10 @@
  */
 package uk.ac.ox.oii.sigmaexporter;
 
+import java.io.IOException;
+import java.io.StringWriter;
+import java.io.UncheckedIOException;
+import java.io.Writer;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -24,30 +28,25 @@ public final class InlineData {
     private InlineData() {
     }
 
+    /** Writes a JSON document to a writer, so large data never has to be held as one string. */
+    public interface JsonSource {
+        void writeTo(Writer out) throws IOException;
+    }
+
     /**
      * Makes JSON text safe to place inside a script element: "&lt;/" becomes
-     * "&lt;\/" so nothing can close the element early, "&lt;!--" is escaped so it
-     * cannot switch the HTML parser into a comment-like state, and U+2028 /
-     * U+2029 are written as escapes. All replacements only occur inside JSON
-     * strings, where they are valid escapes that JSON.parse turns back into the
-     * original characters.
+     * "&lt;\/" so nothing can close the element early, "&lt;!" is escaped so
+     * "&lt;!--" cannot switch the HTML parser into a comment-like state, and
+     * U+2028 / U+2029 are written as escapes. All replacements only occur
+     * inside JSON strings, where they are valid escapes that JSON.parse turns
+     * back into the original characters.
      */
     public static String escapeForScript(String json) {
-        StringBuilder out = new StringBuilder(json.length() + 16);
-        for (int i = 0; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (c == '<' && i + 1 < json.length() && json.charAt(i + 1) == '/') {
-                out.append("<\\/");
-                i++;
-            } else if (c == '<' && json.startsWith("<!--", i)) {
-                out.append("\\u003c");
-            } else if (c == ' ') {
-                out.append("\\u2028");
-            } else if (c == ' ') {
-                out.append("\\u2029");
-            } else {
-                out.append(c);
-            }
+        StringWriter out = new StringWriter(json.length() + 16);
+        try (Writer w = new ScriptSafeWriter(out)) {
+            w.write(json);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
         return out.toString();
     }
@@ -59,8 +58,18 @@ public final class InlineData {
      * or, failing that, at the start of the document.
      */
     public static String inject(String html, String configJson, String dataJson) {
+        StringWriter out = new StringWriter(html.length() + configJson.length() + dataJson.length() + 128);
+        try {
+            inject(html, configJson, w -> w.write(dataJson), out);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return out.toString();
+    }
+
+    /** Streaming form of {@link #inject(String, String, String)}: the data is written straight to {@code out}. */
+    public static void inject(String html, String configJson, JsonSource data, Writer out) throws IOException {
         String cleaned = EXISTING.matcher(html).replaceAll("");
-        String block = scriptTag(CONFIG_ID, configJson) + scriptTag(DATA_ID, dataJson);
         String lower = cleaned.toLowerCase(Locale.ROOT);
         int at = lower.indexOf("</head>");
         if (at < 0) {
@@ -69,12 +78,82 @@ public final class InlineData {
         if (at < 0) {
             at = 0;
         }
-        return cleaned.substring(0, at) + block + cleaned.substring(at);
+        out.write(cleaned, 0, at);
+        scriptTag(CONFIG_ID, w -> w.write(configJson), out);
+        scriptTag(DATA_ID, data, out);
+        out.write(cleaned, at, cleaned.length() - at);
+        out.flush();
     }
 
-    private static String scriptTag(String id, String json) {
-        return "<script type=\"application/json\" id=\"" + id + "\">"
-                + escapeForScript(json)
-                + "</script>\n";
+    private static void scriptTag(String id, JsonSource json, Writer out) throws IOException {
+        out.write("<script type=\"application/json\" id=\"" + id + "\">");
+        ScriptSafeWriter safe = new ScriptSafeWriter(out);
+        json.writeTo(safe);
+        safe.finish();
+        out.write("</script>\n");
+    }
+
+    /** Applies {@link #escapeForScript} to everything written through it, holding back at most one '<'. */
+    private static final class ScriptSafeWriter extends Writer {
+        private final Writer out;
+        private boolean pendingLt;
+
+        ScriptSafeWriter(Writer out) {
+            this.out = out;
+        }
+
+        @Override
+        public void write(int c) throws IOException {
+            if (pendingLt) {
+                pendingLt = false;
+                if (c == '/') {
+                    out.write("<\\/");
+                    return;
+                }
+                out.write(c == '!' ? "\\u003c" : "<");
+            }
+            if (c == '<') {
+                pendingLt = true;
+            } else if (c == '\u2028') {
+                out.write("\\u2028");
+            } else if (c == '\u2029') {
+                out.write("\\u2029");
+            } else {
+                out.write(c);
+            }
+        }
+
+        @Override
+        public void write(char[] buf, int off, int len) throws IOException {
+            for (int i = off; i < off + len; i++) {
+                write(buf[i]);
+            }
+        }
+
+        @Override
+        public void write(String str, int off, int len) throws IOException {
+            for (int i = off; i < off + len; i++) {
+                write(str.charAt(i));
+            }
+        }
+
+        /** Writes out a held-back '<' without closing the underlying writer. */
+        void finish() throws IOException {
+            if (pendingLt) {
+                pendingLt = false;
+                out.write('<');
+            }
+        }
+
+        @Override
+        public void flush() throws IOException {
+            out.flush();
+        }
+
+        @Override
+        public void close() throws IOException {
+            finish();
+            out.flush();
+        }
     }
 }

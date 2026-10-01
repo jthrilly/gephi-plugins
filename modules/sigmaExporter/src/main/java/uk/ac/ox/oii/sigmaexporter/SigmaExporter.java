@@ -17,6 +17,7 @@ import java.awt.Color;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,6 +26,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.gephi.graph.api.Column;
@@ -85,27 +87,32 @@ public class SigmaExporter implements Exporter, LongTask {
         }
         Path networkDir = dir.toPath().resolve("network");
 
-        //Gson to handle JSON writing and escape
+        //Gson to handle JSON writing and escape. data.json is streamed to disk
+        //so large graphs never have to fit in memory as a single string.
         String configJson = new GsonBuilder().setPrettyPrinting().create().toJson(config);
-        String dataJson = buildDataJson(graphModel);
-        if (dataJson == null) {
+        Map<String, HashSet<GraphElement>> data = buildData(graphModel);
+        if (data == null) {
             return false; //cancelled
         }
+        Gson gson = new Gson();
 
         Files.write(networkDir.resolve("config.json"), configJson.getBytes(StandardCharsets.UTF_8));
-        Files.write(networkDir.resolve("data.json"), dataJson.getBytes(StandardCharsets.UTF_8));
+        try (Writer out = Files.newBufferedWriter(networkDir.resolve("data.json"), StandardCharsets.UTF_8)) {
+            gson.toJson(data, out);
+        }
 
         if (inlineData) {
             Path index = networkDir.resolve("index.html");
             String html = new String(Files.readAllBytes(index), StandardCharsets.UTF_8);
-            html = InlineData.inject(html, configJson, dataJson);
-            Files.write(index, html.getBytes(StandardCharsets.UTF_8));
+            try (Writer out = Files.newBufferedWriter(index, StandardCharsets.UTF_8)) {
+                InlineData.inject(html, configJson, w -> gson.toJson(data, w), out);
+            }
         }
         return !cancel;
     }
 
-    /** Builds data.json for the visible graph. Returns null if cancelled. */
-    String buildDataJson(GraphModel graphModel) {
+    /** Builds the data.json document for the visible graph. Returns null if cancelled. */
+    Map<String, HashSet<GraphElement>> buildData(GraphModel graphModel) {
         HashMap<String,String> nodeIdMap = new HashMap<String,String>();
         int nodeId=0;
         EdgeColor colorMixer = new EdgeColor(EdgeColor.Mode.MIXED);
@@ -228,7 +235,7 @@ public class SigmaExporter implements Exporter, LongTask {
             HashMap<String, HashSet<GraphElement>> json = new HashMap<String, HashSet<GraphElement>>();
             json.put("nodes", jNodes);
             json.put("edges", jEdges);
-            return new Gson().toJson(json);
+            return json;
         } finally {
             graph.readUnlock();
         }

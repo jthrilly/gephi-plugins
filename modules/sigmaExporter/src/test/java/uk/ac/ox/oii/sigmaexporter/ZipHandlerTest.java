@@ -72,4 +72,14 @@ class ZipHandlerTest {
         ZipHandler.extractZip(SigmaExporter.class.getResourceAsStream("resources/network.zip"), tmp.toString());
         assertEquals(true, Files.isRegularFile(tmp.resolve("network/index.html")));
     }
+
+    @Test
+    void refusesToWriteThroughASymlinkedFolder() throws IOException {
+        Path outside = Files.createDirectory(tmp.resolve("outside"));
+        Path dest = Files.createDirectory(tmp.resolve("export"));
+        Files.createSymbolicLink(dest.resolve("network"), outside);
+        byte[] z = zip(false, "network/index.html", "<html></html>");
+        assertThrows(IOException.class, () -> ZipHandler.extractZip(new ByteArrayInputStream(z), dest.toString()));
+        assertFalse(Files.exists(outside.resolve("index.html")));
+    }
 }

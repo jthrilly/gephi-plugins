@@ -36,6 +36,7 @@ public class ZipHandler {
                 if (!target.startsWith(destDir)) {
                     throw new IOException("Zip entry outside target directory: " + entry.getName());
                 }
+                rejectSymlinks(destDir, target);
                 if (entry.isDirectory()) {
                     Files.createDirectories(target);
                 } else {
@@ -47,6 +48,21 @@ public class ZipHandler {
                     LOG.log(Level.FINE, "Extracted {0}", entry.getName());
                 }
                 zin.closeEntry();
+            }
+        }
+    }
+
+    /**
+     * The startsWith check above is only lexical. Refuse to write through an
+     * existing symbolic link below destDir (e.g. a network/ folder linking
+     * elsewhere), which would otherwise put files outside the export folder.
+     */
+    private static void rejectSymlinks(Path destDir, Path target) throws IOException {
+        Path current = destDir;
+        for (Path name : destDir.relativize(target)) {
+            current = current.resolve(name);
+            if (Files.isSymbolicLink(current)) {
+                throw new IOException("Refusing to write through symbolic link: " + current);
             }
         }
     }
