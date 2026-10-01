@@ -3,41 +3,67 @@
  */
 package uk.ac.ox.oii.sigmaexporter;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.zip.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
+/**
+ * Extracts the bundled viewer template. Works for any file list: entries may
+ * live in nested folders (e.g. network/assets/index-abc123.js) and the zip does
+ * not need explicit directory entries.
+ */
 public class ZipHandler {
 
-    public static void extractZip(InputStream input, String dest) throws Exception {
-        byte[] buf = new byte[1024];
-        ZipInputStream zinstream = new ZipInputStream(input);
-        ZipEntry zentry = zinstream.getNextEntry();
-        //Logger.getLogger(ZipHandler.class.getName()).log(Level.INFO, "Name of current Zip Entry : " + zentry + "\n");
-        while (zentry != null) {
-            String entryName = zentry.getName();
-            //Logger.getLogger(ZipHandler.class.getName()).log(Level.INFO, "Name of  Zip Entry : " + entryName);
-            if (zentry.isDirectory()) {
-                File f = new File(dest + "/" + entryName);
-                f.mkdirs();
-                //Logger.getLogger(ZipHandler.class.getName()).log(Level.INFO, "Create directory " + f.toString());
-                zentry = zinstream.getNextEntry();
-                continue;
-            }
-            FileOutputStream outstream = new FileOutputStream(dest + "/" + entryName);
-            int n;
+    private static final Logger LOG = Logger.getLogger(ZipHandler.class.getName());
 
-            while ((n = zinstream.read(buf, 0, 1024)) > -1) {
-                outstream.write(buf, 0, n);
-
-            }
-            Logger.getLogger(ZipHandler.class.getName()).log(Level.INFO, "Successfully Extracted File Name : {}",entryName);
-            outstream.close();
-
-            zinstream.closeEntry();
-            zentry = zinstream.getNextEntry();
+    public static void extractZip(InputStream input, String dest) throws IOException {
+        if (input == null) {
+            throw new IOException("Viewer template (network.zip) not found in the plugin");
         }
-        zinstream.close();
+        Path destDir = new File(dest).toPath().toAbsolutePath().normalize();
+        Files.createDirectories(destDir);
+        try (ZipInputStream zin = new ZipInputStream(input)) {
+            ZipEntry entry;
+            while ((entry = zin.getNextEntry()) != null) {
+                Path target = destDir.resolve(entry.getName()).normalize();
+                if (!target.startsWith(destDir)) {
+                    throw new IOException("Zip entry outside target directory: " + entry.getName());
+                }
+                rejectSymlinks(destDir, target);
+                if (entry.isDirectory()) {
+                    Files.createDirectories(target);
+                } else {
+                    Path parent = target.getParent();
+                    if (parent != null) {
+                        Files.createDirectories(parent);
+                    }
+                    Files.copy(zin, target, StandardCopyOption.REPLACE_EXISTING);
+                    LOG.log(Level.FINE, "Extracted {0}", entry.getName());
+                }
+                zin.closeEntry();
+            }
+        }
+    }
+
+    /**
+     * The startsWith check above is only lexical. Refuse to write through an
+     * existing symbolic link below destDir (e.g. a network/ folder linking
+     * elsewhere), which would otherwise put files outside the export folder.
+     */
+    private static void rejectSymlinks(Path destDir, Path target) throws IOException {
+        Path current = destDir;
+        for (Path name : destDir.relativize(target)) {
+            current = current.resolve(name);
+            if (Files.isSymbolicLink(current)) {
+                throw new IOException("Refusing to write through symbolic link: " + current);
+            }
+        }
     }
 }

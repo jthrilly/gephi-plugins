@@ -10,6 +10,7 @@ public class GraphEdge extends GraphElement{
 	private String source;
 	private String target;
         private String id;
+        private boolean directed;
 	
 	public GraphEdge(String id) {
 		super();
@@ -33,6 +34,14 @@ public class GraphEdge extends GraphElement{
 
 	public void setSource(String source) {
 		this.source = source;
+	}
+
+	public boolean isDirected() {
+		return directed;
+	}
+
+	public void setDirected(boolean directed) {
+		this.directed = directed;
 	}
 
 	public String getTarget() {

@@ -4,10 +4,24 @@
 package uk.ac.ox.oii.sigmaexporter.model;
 
 import java.io.Serializable;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.prefs.Preferences;
 
 public class ConfigFile implements Serializable{
+
+    private static final long serialVersionUID = 1L;
+
+    /** Edge styles understood by the viewer, written to sigma.drawingProperties.defaultEdgeType. */
+    public static final List<String> EDGE_TYPES =
+            Collections.unmodifiableList(Arrays.asList("line", "curve", "arrow", "curvedArrow"));
+    public static final String DEFAULT_EDGE_TYPE = "curve";
+
+    /** Preference keys for the options added in 1.0.0. */
+    public static final String PREF_EDGE_TYPE = "sigma.defaultEdgeType";
+    public static final String PREF_SEARCH_FULLTEXT = "search.fulltext";
     
     private final String type;
     private final String version;
@@ -22,6 +36,8 @@ public class ConfigFile implements Serializable{
     
     private HashMap<String,HashMap<String,Object>> sigma;
 
+    private HashMap<String,Object> search;
+
     public ConfigFile() {
         this.type = "network";
         this.data = "data.json";
@@ -33,6 +49,7 @@ public class ConfigFile implements Serializable{
         this.informationPanel = new HashMap<String,Object>();
         
         this.sigma = new HashMap<String,HashMap<String,Object>>();
+        this.search = new HashMap<String,Object>();
         
         setDefaults();
     }
@@ -85,9 +102,8 @@ public class ConfigFile implements Serializable{
         map.put("minEdgeSize", 0.2);
         map.put("maxEdgeSize", 0.5);
         sigma.put("graphProperties", map);
-        
-        
-        
+
+        search.put("fulltext", false);
     }
     
     
@@ -140,6 +156,39 @@ public class ConfigFile implements Serializable{
         this.sigma = sigma;
     }
 
+    public HashMap<String, Object> getSearch() {
+        return search;
+    }
+
+    public void setSearch(HashMap<String, Object> search) {
+        this.search = search;
+    }
+
+    /** Search all node attributes in the viewer, not only labels. Written as search.fulltext. */
+    public void setSearchFulltext(boolean fulltext) {
+        search.put("fulltext", fulltext);
+    }
+
+    public boolean isSearchFulltext() {
+        return Boolean.TRUE.equals(search.get("fulltext"));
+    }
+
+    /**
+     * Sets sigma.drawingProperties.defaultEdgeType. Unknown values fall back to
+     * {@link #DEFAULT_EDGE_TYPE}.
+     */
+    public void setDefaultEdgeType(String edgeType) {
+        sigma.get("drawingProperties").put("defaultEdgeType", normalizeEdgeType(edgeType));
+    }
+
+    public String getDefaultEdgeType() {
+        return String.valueOf(sigma.get("drawingProperties").get("defaultEdgeType"));
+    }
+
+    public static String normalizeEdgeType(String edgeType) {
+        return EDGE_TYPES.contains(edgeType) ? edgeType : DEFAULT_EDGE_TYPE;
+    }
+
     public void readFromPrefs(Preferences props) {
         legend.put("nodeLabel",props.get("legend.node",""));
         legend.put("edgeLabel",props.get("legend.edge",""));
@@ -168,6 +217,9 @@ public class ConfigFile implements Serializable{
         logo.put("file",props.get("logo.file",""));
         logo.put("link",props.get("logo.link",""));
         logo.put("text",props.get("logo.author",""));
+
+        setDefaultEdgeType(props.get(PREF_EDGE_TYPE, DEFAULT_EDGE_TYPE));
+        setSearchFulltext(Boolean.parseBoolean(props.get(PREF_SEARCH_FULLTEXT, "false")));
     }
     
     
