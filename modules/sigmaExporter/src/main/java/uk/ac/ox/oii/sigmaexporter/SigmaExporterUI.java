@@ -36,9 +36,12 @@ public class SigmaExporterUI implements ExporterClassUI {
             @Override
             public void fatalError(Throwable t) {
                 cancelled = true;
-                String message = t.getCause().getMessage();
+                String message = t.getCause() != null ? t.getCause().getMessage() : null;
                 if (message == null || message.isEmpty()) {
                     message = t.getMessage();
+                }
+                if (message == null || message.isEmpty()) {
+                    message = t.toString();
                 }
                 NotifyDescriptor.Message msg = new NotifyDescriptor.Message(message, NotifyDescriptor.WARNING_MESSAGE);
                 DialogDisplayer.getDefault().notify(msg);

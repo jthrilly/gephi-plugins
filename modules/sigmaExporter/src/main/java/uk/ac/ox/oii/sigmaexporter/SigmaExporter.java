@@ -15,10 +15,11 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import java.awt.Color;
 import java.io.File;
-import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStreamWriter;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -48,6 +49,7 @@ public class SigmaExporter implements Exporter, LongTask {
     private ConfigFile config;
     private String path;
     private boolean renumber;
+    private boolean inlineData;
     private Workspace workspace;
     private ProgressTicket progress;
     private boolean cancel = false;
@@ -55,219 +57,181 @@ public class SigmaExporter implements Exporter, LongTask {
     @Override
     public boolean execute() {
         try {
-            final File pathFile = new File(path);
-            if (pathFile.exists()) {
-
-                
-                OutputStreamWriter writer = null;
-                FileOutputStream outStream = null;
-                final Charset utf8 = Charset.forName("UTF-8");
-
-                //Copy resource template
-                try {
-                    InputStream zipStream = SigmaExporter.class.getResourceAsStream("resources/network.zip"); //uk/ac/ox/oii/sigmaexporter/resources/network/index.html
-
-                    //Path zipPath = Paths.get(path.getAbsolutePath()+"/network.zip");
-                    //Files.copy(zipStream,zipPath);//NIO / JDK 7 Only
-
-                    ZipHandler.extractZip(zipStream, pathFile.getAbsolutePath());
-                } catch (Exception e) {
-                    Logger.getLogger(SigmaExporter.class.getName()).log(Level.SEVERE, null, e);
-                }
-
-
-                //Gson to handle JSON writing and escape
-                Gson gson = new Gson();
-                Gson gsonPretty = new GsonBuilder().setPrettyPrinting().create();
-                    
-                //Write config.json
-                try {
-                    //FileWriter(Path...) constructor uses 'default encoding' on Mac this produces error
-                    
-                    //Really want to use jdk7 nio methods to force UTF-8
-                    //try (BufferedWriter writer = Files.newBufferedWriter(pathFile.getAbsolutePath() + "/network/config.json", charset)) {
-                    
-                    //Alternative for now with jdk6 is FileOutputStream wrapped in OutputStreamWriter)
-                    
-                    outStream = new FileOutputStream(pathFile.getAbsolutePath() + "/network/config.json");
-                    writer = new OutputStreamWriter(outStream,utf8);
-                    
-                    
-                    
-                    gsonPretty.toJson(config, writer);
-                } catch (Exception e) {
-                    Logger.getLogger(SigmaExporter.class.getName()).log(Level.SEVERE, null, e);
-                } finally {
-                    if (writer != null) {
-                        writer.close();
-                        writer = null;
-                    }
-                    if (outStream != null) {
-                        outStream.close();
-                        outStream = null;
-                    }
-                }
-
-
-                HashMap<String,String> nodeIdMap = new HashMap<String,String>();
-                int nodeId=0;
-                EdgeColor colorMixer = new EdgeColor(EdgeColor.Mode.MIXED);
-                //Write data.json
-                Graph graph = null;
-                try {
-                    GraphModel graphModel = workspace.getLookup().lookup(GraphModel.class);
-                    graph = graphModel.getGraphVisible();
-                    graph.readLock();
-
-                    //Count the number of tasks (nodes + edges) and start the progress
-                    int tasks = graph.getNodeCount() + graph.getEdgeCount();
-                    Progress.start(progress, tasks);
-                    
-                    Table attModel = graphModel.getNodeTable();
-                    HashSet<GraphElement> jNodes = new HashSet<GraphElement>();
-                    Node[] nodeArray = graph.getNodes().toArray();
-                    for (Node n : nodeArray) {
-                        String id = n.getId().toString();
-                        String label = n.getLabel();
-                        float x = n.x();
-                        float y = n.y();
-                        float size = n.size();
-                        String color = "rgb(" + (int) (n.r() * 255) + "," + (int) (n.g() * 255) + "," + (int) (n.b() * 255) + ")";
-
-                        if (renumber) {
-                           String newId=String.valueOf(nodeId);
-                           nodeIdMap.put(id,newId); 
-                           id=newId;
-                           nodeId++;
-                        }
-                        
-                        GraphNode jNode = new GraphNode(id);
-                        jNode.setLabel(label);
-                        jNode.setX(x);
-                        jNode.setY(y);
-                        jNode.setSize(size);
-                        jNode.setColor(color);
-
-                        for (Column col : attModel) {
-                            String cid = col.getId();
-                            if (cid.equalsIgnoreCase("id") || cid.equalsIgnoreCase("label")) {
-                                continue;
-                            }
-
-                            Object valObj = n.getAttribute(col);
-                            if (valObj == null) {
-                                continue;
-                            }
-                            String name = col.getTitle();
-                            String val = valObj.toString();
-                            jNode.putAttribute(name, val);
-                        }
-
-                        jNodes.add(jNode);
-
-                        if (cancel) {
-                            return false;
-                        }
-                        Progress.progress(progress);
-                    }
-
-
-                    //Export edges. Progress is incremented at each step.
-                    HashSet<GraphElement> jEdges = new HashSet<GraphElement>();
-                    Edge[] edgeArray = graph.getEdges().toArray();
-                    for (Edge e : edgeArray) {
-                        String sourceId = e.getSource().getId().toString();
-                        String targetId = e.getTarget().getId().toString();
-                        
-                        if (renumber) {
-                            sourceId = nodeIdMap.get(sourceId);
-                            targetId = nodeIdMap.get(targetId);
-                        }
-                        
-
-                        //GraphEdge jEdge = new GraphEdge();
-                        GraphEdge jEdge = new GraphEdge(String.valueOf(e.getId()));
-                        jEdge.setSource(sourceId);
-                        jEdge.setTarget(targetId);
-                        jEdge.setSize(e.getWeight());
-                        jEdge.setLabel(e.getLabel());
-                        
-                        float r=e.r();
-                        float g=e.g();
-                        float b=e.b();
-
-                        Iterator<Column> eAttr = e.getAttributeColumns().iterator();
-                        while (eAttr.hasNext()) {
-                            Column col = eAttr.next();
-                            if (col.isProperty() || "weight".equalsIgnoreCase(col.getId())) {
-                                //isProperty() excludes id, label, but not weight
-                                continue;
-                            }
-                            String name = col.getTitle();
-                            Object valObj = e.getAttribute(col);
-                            if (valObj == null) {
-                                continue;
-                            }
-                            String val = valObj.toString();
-                            jEdge.putAttribute(name, val);
-                        }
-
-                        String color;
-                        if (e.alpha()!=0) {
-                            color = "rgb(" + (int) (r* 255) + "," + (int) (g* 255) + "," + (int) (b* 255) + ")";
-                        } else {
-                            //no colour has been set. Colour will be mix of connected nodes
-                            Node n = e.getSource();
-                            Color source = new Color(n.r(),n.g(),n.b());
-                            n = e.getTarget();
-                            Color target = new Color(n.r(),n.g(),n.b());
-                            Color result = colorMixer.getColor(null, source, target);
-                            color = "rgb(" + result.getRed() + "," + result.getGreen() + "," + result.getBlue() + ")";
-                        }
-                        jEdge.setColor(color);
-
-                        jEdges.add(jEdge);
-
-                        if (cancel) {
-                            return false;
-                        }
-                        Progress.progress(progress);
-                    }
-
-
-                    outStream = new FileOutputStream(pathFile.getAbsolutePath() + "/network/data.json");
-                    writer = new OutputStreamWriter(outStream,utf8);
-                    
-                    HashMap<String, HashSet<GraphElement>> json = new HashMap<String, HashSet<GraphElement>>();
-                    json.put("nodes", jNodes);
-                    json.put("edges", jEdges);
-                    
-                    gson.toJson(json, writer);
-                    
-                } catch (Exception e) {
-                    Logger.getLogger(SigmaExporter.class.getName()).log(Level.SEVERE, null, e);
-                } finally {
-                    if (graph!=null) {
-                        graph.readUnlock();
-                    }
-                    if (writer != null) {
-                        writer.close();
-                        writer = null;
-                    }
-                    if (outStream != null) {
-                        outStream.close();
-                        outStream = null;
-                    }
-                }
-            } else {
-                throw new Exception("Invalid path. Please make sure the specified directory exists. The network will be exported into a new 'network' directory in this directory.");
-            }
+            GraphModel graphModel = workspace.getLookup().lookup(GraphModel.class);
+            return exportTo(new File(path), graphModel);
         } catch (Exception e) {
             Logger.getLogger(SigmaExporter.class.getName()).log(Level.SEVERE, null, e);
+            throw new RuntimeException(e.getMessage(), e);
+        } finally {
+            Progress.finish(progress);
         }
-        //Finish progress
-        Progress.finish(progress);
-        return !cancel; //true if task has not been cancelled and we've gotten to the end
+    }
+
+    /**
+     * Writes the viewer template, config.json and data.json into
+     * {@code <dir>/network}. When inline data is on, both JSON documents are
+     * also embedded into network/index.html.
+     *
+     * @return false if the export was cancelled
+     */
+    public boolean exportTo(File dir, GraphModel graphModel) throws IOException {
+        if (!dir.isDirectory()) {
+            throw new IOException("Invalid path. Please make sure the specified directory exists. The network will be exported into a new 'network' directory in this directory.");
+        }
+
+        //Copy resource template (entries are under network/)
+        try (InputStream zipStream = SigmaExporter.class.getResourceAsStream("resources/network.zip")) {
+            ZipHandler.extractZip(zipStream, dir.getAbsolutePath());
+        }
+        Path networkDir = dir.toPath().resolve("network");
+
+        //Gson to handle JSON writing and escape
+        String configJson = new GsonBuilder().setPrettyPrinting().create().toJson(config);
+        String dataJson = buildDataJson(graphModel);
+        if (dataJson == null) {
+            return false; //cancelled
+        }
+
+        Files.write(networkDir.resolve("config.json"), configJson.getBytes(StandardCharsets.UTF_8));
+        Files.write(networkDir.resolve("data.json"), dataJson.getBytes(StandardCharsets.UTF_8));
+
+        if (inlineData) {
+            Path index = networkDir.resolve("index.html");
+            String html = new String(Files.readAllBytes(index), StandardCharsets.UTF_8);
+            html = InlineData.inject(html, configJson, dataJson);
+            Files.write(index, html.getBytes(StandardCharsets.UTF_8));
+        }
+        return !cancel;
+    }
+
+    /** Builds data.json for the visible graph. Returns null if cancelled. */
+    String buildDataJson(GraphModel graphModel) {
+        HashMap<String,String> nodeIdMap = new HashMap<String,String>();
+        int nodeId=0;
+        EdgeColor colorMixer = new EdgeColor(EdgeColor.Mode.MIXED);
+        Graph graph = graphModel.getGraphVisible();
+        graph.readLock();
+        try {
+            //Count the number of tasks (nodes + edges) and start the progress
+            int tasks = graph.getNodeCount() + graph.getEdgeCount();
+            Progress.start(progress, tasks);
+
+            Table attModel = graphModel.getNodeTable();
+            HashSet<GraphElement> jNodes = new HashSet<GraphElement>();
+            Node[] nodeArray = graph.getNodes().toArray();
+            for (Node n : nodeArray) {
+                String id = n.getId().toString();
+                String label = n.getLabel();
+                float x = n.x();
+                float y = n.y();
+                float size = n.size();
+                String color = "rgb(" + (int) (n.r() * 255) + "," + (int) (n.g() * 255) + "," + (int) (n.b() * 255) + ")";
+
+                if (renumber) {
+                   String newId=String.valueOf(nodeId);
+                   nodeIdMap.put(id,newId);
+                   id=newId;
+                   nodeId++;
+                }
+
+                GraphNode jNode = new GraphNode(id);
+                jNode.setLabel(label);
+                jNode.setX(x);
+                jNode.setY(y);
+                jNode.setSize(size);
+                jNode.setColor(color);
+
+                for (Column col : attModel) {
+                    String cid = col.getId();
+                    if (cid.equalsIgnoreCase("id") || cid.equalsIgnoreCase("label")) {
+                        continue;
+                    }
+
+                    Object valObj = n.getAttribute(col);
+                    if (valObj == null) {
+                        continue;
+                    }
+                    String name = col.getTitle();
+                    String val = valObj.toString();
+                    jNode.putAttribute(name, val);
+                }
+
+                jNodes.add(jNode);
+
+                if (cancel) {
+                    return null;
+                }
+                Progress.progress(progress);
+            }
+
+            //Export edges. Progress is incremented at each step.
+            HashSet<GraphElement> jEdges = new HashSet<GraphElement>();
+            Edge[] edgeArray = graph.getEdges().toArray();
+            for (Edge e : edgeArray) {
+                String sourceId = e.getSource().getId().toString();
+                String targetId = e.getTarget().getId().toString();
+
+                if (renumber) {
+                    sourceId = nodeIdMap.get(sourceId);
+                    targetId = nodeIdMap.get(targetId);
+                }
+
+                GraphEdge jEdge = new GraphEdge(String.valueOf(e.getId()));
+                jEdge.setSource(sourceId);
+                jEdge.setTarget(targetId);
+                jEdge.setDirected(e.isDirected());
+                jEdge.setSize(e.getWeight());
+                jEdge.setLabel(e.getLabel());
+
+                float r=e.r();
+                float g=e.g();
+                float b=e.b();
+
+                Iterator<Column> eAttr = e.getAttributeColumns().iterator();
+                while (eAttr.hasNext()) {
+                    Column col = eAttr.next();
+                    if (col.isProperty() || "weight".equalsIgnoreCase(col.getId())) {
+                        //isProperty() excludes id, label, but not weight
+                        continue;
+                    }
+                    String name = col.getTitle();
+                    Object valObj = e.getAttribute(col);
+                    if (valObj == null) {
+                        continue;
+                    }
+                    String val = valObj.toString();
+                    jEdge.putAttribute(name, val);
+                }
+
+                String color;
+                if (e.alpha()!=0) {
+                    color = "rgb(" + (int) (r* 255) + "," + (int) (g* 255) + "," + (int) (b* 255) + ")";
+                } else {
+                    //no colour has been set. Colour will be mix of connected nodes
+                    Node n = e.getSource();
+                    Color source = new Color(n.r(),n.g(),n.b());
+                    n = e.getTarget();
+                    Color target = new Color(n.r(),n.g(),n.b());
+                    Color result = colorMixer.getColor(null, source, target);
+                    color = "rgb(" + result.getRed() + "," + result.getGreen() + "," + result.getBlue() + ")";
+                }
+                jEdge.setColor(color);
+
+                jEdges.add(jEdge);
+
+                if (cancel) {
+                    return null;
+                }
+                Progress.progress(progress);
+            }
+
+            HashMap<String, HashSet<GraphElement>> json = new HashMap<String, HashSet<GraphElement>>();
+            json.put("nodes", jNodes);
+            json.put("edges", jEdges);
+            return new Gson().toJson(json);
+        } finally {
+            graph.readUnlock();
+        }
     }
 
     public ConfigFile getConfigFile() {
@@ -288,6 +252,15 @@ public class SigmaExporter implements Exporter, LongTask {
         this.config = cfg;
         this.path = path;
         this.renumber = renumber;
+    }
+
+    /** Also embed config.json and data.json into index.html (opens without a web server). */
+    public void setInlineData(boolean inlineData) {
+        this.inlineData = inlineData;
+    }
+
+    public boolean isInlineData() {
+        return inlineData;
     }
 
     @Override

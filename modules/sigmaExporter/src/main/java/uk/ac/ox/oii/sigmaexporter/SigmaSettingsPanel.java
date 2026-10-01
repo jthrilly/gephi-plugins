@@ -26,6 +26,7 @@ import uk.ac.ox.oii.sigmaexporter.model.ConfigFile;
 public class SigmaSettingsPanel extends javax.swing.JPanel {
 
     //final String LAST_PATH = "SQLiteDatabaseSettingsPanel_Last_Path";
+    static final String PREF_INLINE = "inlineData";
     private File path;
     private SigmaExporter exporter;
 
@@ -93,6 +94,10 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
         txtLink.setText(prefs.get("logo.link", ""));        
         txtAuthor.setText(prefs.get("logo.author", ""));
         cbRenumber.setSelected(Boolean.valueOf(prefs.get("renumber","true")));
+        String edgeType = ConfigFile.normalizeEdgeType(prefs.get(ConfigFile.PREF_EDGE_TYPE, ConfigFile.DEFAULT_EDGE_TYPE));
+        ddEdgeType.setSelectedIndex(ConfigFile.EDGE_TYPES.indexOf(edgeType));
+        cbFulltext.setSelected(Boolean.parseBoolean(prefs.get(ConfigFile.PREF_SEARCH_FULLTEXT, "false")));
+        cbInline.setSelected(Boolean.parseBoolean(prefs.get(PREF_INLINE, "false")));
     }
 
     public void unsetup(boolean update) {
@@ -100,6 +105,7 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
         Preferences props = NbPreferences.forModule(SigmaSettingsPanel.class);
         String path="";
         boolean renumber = false;
+        boolean inline = false;
         if (update) {
             try {
                 path = pathTextField.getText();
@@ -120,6 +126,12 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
                 props.put("logo.file",txtLogo.getText());
                 props.put("logo.link",txtLink.getText());
                 props.put("logo.author",txtAuthor.getText());
+                // ddEdgeType items are in the same order as ConfigFile.EDGE_TYPES
+                int edgeIndex = ddEdgeType.getSelectedIndex();
+                props.put(ConfigFile.PREF_EDGE_TYPE, edgeIndex >= 0 ? ConfigFile.EDGE_TYPES.get(edgeIndex) : ConfigFile.DEFAULT_EDGE_TYPE);
+                props.put(ConfigFile.PREF_SEARCH_FULLTEXT, String.valueOf(cbFulltext.isSelected()));
+                inline = cbInline.isSelected();
+                props.put(PREF_INLINE, String.valueOf(inline));
                 
             } catch (Exception e) {
                 Logger.getLogger(SigmaExporter.class.getName()).log(Level.SEVERE, null, e);
@@ -127,6 +139,7 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
             ConfigFile cfg = new ConfigFile();
             cfg.readFromPrefs(props);
             exporter.setConfigFile(cfg,path,renumber);
+            exporter.setInlineData(inline);
         }
     }
 
@@ -178,6 +191,10 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
         txtTitle = new javax.swing.JTextField();
         jLabel17 = new javax.swing.JLabel();
         cbRenumber = new javax.swing.JCheckBox();
+        jLabel19 = new javax.swing.JLabel();
+        ddEdgeType = new javax.swing.JComboBox();
+        cbFulltext = new javax.swing.JCheckBox();
+        cbInline = new javax.swing.JCheckBox();
 
         jLabel1.setFont(jLabel1.getFont().deriveFont(jLabel1.getFont().getStyle() | java.awt.Font.BOLD, jLabel1.getFont().getSize()+3));
         jLabel1.setText(org.openide.util.NbBundle.getMessage(SigmaSettingsPanel.class, "SigmaSettingsPanel.jLabel1.text")); // NOI18N
@@ -290,6 +307,17 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
         cbRenumber.setText(org.openide.util.NbBundle.getMessage(SigmaSettingsPanel.class, "SigmaSettingsPanel.cbRenumber.text")); // NOI18N
         cbRenumber.setToolTipText(org.openide.util.NbBundle.getMessage(SigmaSettingsPanel.class, "SigmaSettingsPanel.cbRenumber.toolTipText")); // NOI18N
 
+        jLabel19.setText(org.openide.util.NbBundle.getMessage(SigmaSettingsPanel.class, "SigmaSettingsPanel.jLabel19.text")); // NOI18N
+
+        ddEdgeType.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "Straight", "Curved", "Straight with arrows", "Curved with arrows" }));
+        ddEdgeType.setSelectedIndex(1);
+
+        cbFulltext.setText(org.openide.util.NbBundle.getMessage(SigmaSettingsPanel.class, "SigmaSettingsPanel.cbFulltext.text")); // NOI18N
+        cbFulltext.setToolTipText(org.openide.util.NbBundle.getMessage(SigmaSettingsPanel.class, "SigmaSettingsPanel.cbFulltext.toolTipText")); // NOI18N
+
+        cbInline.setText(org.openide.util.NbBundle.getMessage(SigmaSettingsPanel.class, "SigmaSettingsPanel.cbInline.text")); // NOI18N
+        cbInline.setToolTipText(org.openide.util.NbBundle.getMessage(SigmaSettingsPanel.class, "SigmaSettingsPanel.cbInline.toolTipText")); // NOI18N
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
         this.setLayout(layout);
         layout.setHorizontalGroup(
@@ -355,12 +383,15 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
                                     .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
                                         .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                             .addComponent(jLabel16)
-                                            .addComponent(jLabel15))
+                                            .addComponent(jLabel15)
+                                            .addComponent(jLabel19))
                                         .addGap(18, 18, 18)))
                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                     .addComponent(ddHover, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                                     .addComponent(ddGroupSelector, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                    .addComponent(ddImageAttribute, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))))
+                                    .addComponent(ddImageAttribute, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                    .addComponent(ddEdgeType, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)))
+                            .addComponent(cbFulltext))
                         .addGap(97, 97, 97))
                     .addGroup(layout.createSequentialGroup()
                         .addContainerGap()
@@ -373,7 +404,10 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                     .addComponent(jLabel1)
                                     .addComponent(jLabel13)
-                                    .addComponent(cbRenumber))
+                                    .addGroup(layout.createSequentialGroup()
+                                        .addComponent(cbRenumber)
+                                        .addGap(18, 18, 18)
+                                        .addComponent(cbInline)))
                                 .addGap(0, 0, Short.MAX_VALUE)))))
                 .addContainerGap())
         );
@@ -405,7 +439,13 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                         .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                             .addComponent(ddImageAttribute, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                            .addComponent(jLabel16)))
+                            .addComponent(jLabel16))
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                            .addComponent(ddEdgeType, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(jLabel19))
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(cbFulltext))
                     .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                         .addComponent(jLabel2)
                         .addComponent(jLabel7))
@@ -456,7 +496,9 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
                 .addGap(5, 5, 5)
                 .addComponent(jScrollPane3, javax.swing.GroupLayout.DEFAULT_SIZE, 139, Short.MAX_VALUE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(cbRenumber)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(cbRenumber)
+                    .addComponent(cbInline))
                 .addGap(7, 7, 7))
         );
     }// </editor-fold>//GEN-END:initComponents
@@ -473,9 +515,12 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
     private javax.swing.JPanel attributesPanel;
     private javax.swing.JScrollPane attributesScrollPanel;
     private javax.swing.JButton browseButton;
+    private javax.swing.JCheckBox cbFulltext;
     private javax.swing.JCheckBox cbGroupEdges;
+    private javax.swing.JCheckBox cbInline;
     private javax.swing.JCheckBox cbRenumber;
     private javax.swing.JCheckBox cbSearch;
+    private javax.swing.JComboBox ddEdgeType;
     private javax.swing.JComboBox ddGroupSelector;
     private javax.swing.JComboBox ddHover;
     private javax.swing.JComboBox ddImageAttribute;
@@ -489,6 +534,7 @@ public class SigmaSettingsPanel extends javax.swing.JPanel {
     private javax.swing.JLabel jLabel16;
     private javax.swing.JLabel jLabel17;
     private javax.swing.JLabel jLabel18;
+    private javax.swing.JLabel jLabel19;
     private javax.swing.JLabel jLabel2;
     private javax.swing.JLabel jLabel3;
     private javax.swing.JLabel jLabel4;
