@@ -4,7 +4,7 @@
 
     <groupId>org.gephi</groupId>
     <artifactId>gephi-plugins</artifactId>
-    <version>0.9.0</version>
+    <version>0.11.3</version>
     <packaging>pom</packaging>
 
     <name>gephi-plugins</name>
@@ -18,7 +18,7 @@
     <!-- Properties -->
     <properties>
         <!-- Version of Gephi building plugins against. Plugins with anterior versions will be ignored -->
-        <gephi.version>0.9.0</gephi.version>
+        <gephi.version>0.11.3</gephi.version>
         <clusters.path>${project.build.directory}/plugins_clusters</clusters.path>
         <github.global.server>github</github.global.server>
     </properties>
@@ -31,28 +31,28 @@
     </scm>
 
     <!-- Repositories -->
+    <!-- Note: if testing against a snapshot version of gephi-maven-plugin, a <pluginRepositories> entry for central-portal-snapshots must be added back -->
     <repositories>
         <repository>
-            <id>oss-sonatype</id>
-            <name>oss-sonatype</name>
-            <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+            <name>Central Portal Snapshots</name>
+            <id>central-portal-snapshots</id>
+            <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
             <snapshots>
                 <enabled>true</enabled>
             </snapshots>
         </repository>
     </repositories>
-    
-    <!-- Plugin Repositories -->
-    <pluginRepositories>
-        <pluginRepository>
-            <id>oss-sonatype</id>
-            <name>oss-sonatype</name>
-            <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </pluginRepository>
-    </pluginRepositories>
+
+    <!-- For site only -->
+    <distributionManagement>
+        <site>
+            <id>github</id>
+            <url>scm:git:https://github.com/gephi/gephi-plugins.git</url>
+        </site>
+    </distributionManagement>
 
     <!-- Dependencies -->
     <dependencies>
@@ -60,7 +60,7 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>gephi</artifactId>
             <version>${gephi.version}</version>
-            <classifier>linux</classifier>
+            <classifier>linux-x64</classifier>
             <type>tar.gz</type>
         </dependency>
     </dependencies>
@@ -72,28 +72,29 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-dependency-plugin</artifactId>
-                    <version>2.10</version>
+                    <version>3.11.0</version>
                 </plugin>
                 <plugin>
-                    <groupId>org.codehaus.mojo</groupId>
+                    <groupId>org.apache.netbeans.utilities</groupId>
                     <artifactId>nbm-maven-plugin</artifactId>
-                    <version>3.14</version>
+                    <version>14.5</version>
+                    <extensions>true</extensions>
                 </plugin>
                 <plugin>
                     <groupId>org.gephi</groupId>
                     <artifactId>gephi-maven-plugin</artifactId>
-                    <version>1.2.3</version>
-                    <configuration>
-                        <gephiDirectory>${project.build.directory}/gephi-${gephi.version}</gephiDirectory>
-                        <clusters>
-                            <cluster>${clusters.path}/plugins</cluster>
-                        </clusters>
-                    </configuration>
+                    <version>1.3.4</version>
                 </plugin>
                 <plugin>
-                    <groupId>com.github.github</groupId>
-                    <artifactId>site-maven-plugin</artifactId>
-                    <version>0.12</version>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-scm-publish-plugin</artifactId>
+                    <version>3.3.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.sonatype.central</groupId>
+                    <artifactId>central-publishing-maven-plugin</artifactId>
+                    <version>0.11.0</version>
+                    <extensions>true</extensions>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -104,6 +105,15 @@
             <plugin>
                 <groupId>org.gephi</groupId>
                 <artifactId>gephi-maven-plugin</artifactId>
+                <configuration>
+                    <metadataUrl>https://gephi.org/gephi-plugins/plugins/</metadataUrl>
+                    <gephiDirectory>${project.build.directory}/gephi-${gephi.version}</gephiDirectory>
+                    <outputDirectory>${project.build.directory}/site/plugins/</outputDirectory>
+                    <skipUnchangedVersions>true</skipUnchangedVersions>
+                    <clusters>
+                        <cluster>${clusters.path}/plugins</cluster>
+                    </clusters>
+                </configuration>
                 <executions>
                     <execution>
                         <id>validate-plugin</id>
@@ -132,6 +142,8 @@
                             <outputDirectory>
                                 ${project.build.directory}
                             </outputDirectory>
+                            <excludes>**/jre/**</excludes>
+                            <excludes>**/jre-x64/**</excludes>
                         </configuration>
                     </execution>
                 </executions>
@@ -139,10 +151,10 @@
             
             <!-- NBM Plugin -->
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
+                <groupId>org.apache.netbeans.utilities</groupId>
                 <artifactId>nbm-maven-plugin</artifactId>
                 <configuration>
-                    <nbmBuildDir>${clusters.path}</nbmBuildDir>
+                    <clusterBuildDir>${clusters.path}</clusterBuildDir>
                 </configuration>
                 <executions>
                     <execution>
@@ -151,6 +163,11 @@
                             <goal>cluster</goal>
                         </goals>
                     </execution>
+                    <!-- Disable default-branding as it's only needed for the branding module -->
+                    <execution>
+                        <id>default-branding</id>
+                        <phase>none</phase>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>
@@ -158,6 +175,23 @@
     
     <!-- Custom profile only used to build and package all modules at once -->
     <profiles>
+        <profile>
+            <id>release-pom</id>
+            <build>
+                <plugins>
+                    <!-- Maven central -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <id>release</id>
             <build>
@@ -168,51 +202,33 @@
                         <artifactId>gephi-maven-plugin</artifactId>
                         <executions>
                             <execution>
+                                <id>build-metadata</id>
+                                <goals>
+                                    <goal>build-metadata</goal>
+                                </goals>
+                                <phase>package</phase>
+                            </execution>
+                            <execution>
                                 <id>create-autoupdate</id>
                                 <goals>
                                     <goal>create-autoupdate</goal>
                                 </goals>
                                 <phase>package</phase>
                             </execution>
-                            <execution>
-                                <id>build-metadata</id>
-                                <goals>
-                                    <goal>build-metadata</goal>
-                                </goals>
-                                <phase>package</phase>
-                                <configuration>
-                                    <metadataUrl>https://gephi.org/gephi-plugins/plugins/</metadataUrl>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>validate-plugin</id>
-                                <goals>
-                                    <goal>validate</goal>
-                                </goals>
-                                <phase>none</phase>
-                            </execution>
                         </executions>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/site/plugins/</outputDirectory>
-                        </configuration>
                     </plugin>
 
                     <!-- Publish site folder to GitHub's gh-pages branch -->
                     <plugin>
-                        <groupId>com.github.github</groupId>
-                        <artifactId>site-maven-plugin</artifactId>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-scm-publish-plugin</artifactId>
                         <configuration>
-                            <message>Creating site for gephi-plugins version=${project.version} and gephiVersion=${gephi.version}</message>
-                            <merge>true</merge>
+                            <content>${project.build.directory}/site</content>
+                            <scmBranch>gh-pages</scmBranch>
+                            <checkinComment>Autoupdate update for ${project.version} and gephiVersion=${gephi.version}</checkinComment>
+                            <serverId>github</serverId>
+                            <skipDeletedFiles>true</skipDeletedFiles>
                         </configuration>
-                        <executions>
-                            <execution>
-                                <goals>
-                                    <goal>site</goal>
-                                </goals>
-                                <phase>package</phase>
-                            </execution>
-                        </executions>
                     </plugin>
                 </plugins>
             </build>
